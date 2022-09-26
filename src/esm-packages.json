@@ -1,0 +1,11 @@
+[
+  "debounce-fn@latest",
+  "is-ip@latest",
+  "p-memoize@latest",
+  "p-timeout@latest",
+  "quick-lru@latest",
+  "serialize-error@latest",
+  "p-queue@latest",
+  "p-locate@latest",
+  "p-limit@latest"
+]
