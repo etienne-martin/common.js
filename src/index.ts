@@ -199,6 +199,6 @@ const convert = async (pinnedPackage: string) => {
 (async () => {
   for (const pinnedPackage of require("./esm-packages.json")) {
     await convert(pinnedPackage);
-    console.log("");
+    console.log("---");
   }
 })();
