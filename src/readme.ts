@@ -1,7 +1,7 @@
 import { PackageJson } from "type-fest";
 import { assert } from "@sindresorhus/is";
 import path from "node:path";
-import { writeFile } from "node:fs/promises";
+import {rm, writeFile} from "node:fs/promises";
 import { escapePackageName } from "./package-name";
 
 const readmeTemplate = (packageJson: Required<Pick<PackageJson, "name" | "version">>) => `
@@ -25,6 +25,9 @@ export const replaceReadme = async (packagePath: string) => {
     name: packageJson.name,
     version: packageJson.version
   });
+
+  await rm(path.resolve(packagePath, "README.md"), { force: true });
+  await rm(path.resolve(packagePath, "readme.md"), { force: true });
 
   await writeFile(readmePath, newReadmeContent);
 };
