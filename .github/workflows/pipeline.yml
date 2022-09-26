@@ -43,7 +43,9 @@ jobs:
         if: (endsWith(github.ref, '/main') && github.event_name == 'push') || github.event_name == 'schedule'
         run: echo "DISABLE_DRY_RUN=true" >> $GITHUB_ENV
 
+      - name: Set NPM auth token
+        if: (endsWith(github.ref, '/main') && github.event_name == 'push') || github.event_name == 'schedule'
+        run: npm config set //registry.npmjs.org/:_authToken="${{ secrets.NPM_AUTH_TOKEN }}"
+
       - name: Publish
         run: yarn start
-        env:
-          NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
