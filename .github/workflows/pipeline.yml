@@ -37,7 +37,6 @@ jobs:
 
       - name: Enable dry-run
         if: !(endsWith(github.ref, '/main')) || github.event_name != 'push'
-        shell: bash
         run: echo "DRY_RUN=true" >> $GITHUB_ENV
 
       - name: Publish
