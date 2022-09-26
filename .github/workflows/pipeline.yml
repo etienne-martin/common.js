@@ -35,8 +35,8 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Enable dry run
-        if: !(endsWith(github.ref, '/main')) || github.event_name != 'push'
+      - name: Enable dry-run
+        if: endsWith(github.ref, '/main') || github.event_name != 'push'
         run: echo "DRY_RUN=true" >> $GITHUB_ENV
 
       - name: Publish
