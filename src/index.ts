@@ -22,7 +22,7 @@ const convertPackageJsonToCommonJs = async (packageJson: PackageJson, esmModules
     repository: "etienne-martin/common.js",
     homepage: "https://github.com/etienne-martin/common.js#readme",
     type: "commonjs",
-    description: `${packageJson.name} package exported as CommonJS modules.`,
+    description: `${packageJson.name} package exported as CommonJS modules`,
     exports: undefined,
     module: undefined,
     keywords: undefined,
