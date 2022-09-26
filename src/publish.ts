@@ -2,10 +2,12 @@ import { PackageJson } from "type-fest";
 import path from "node:path";
 import { exec } from "./utils/exec";
 
+const DRY_RUN = process.env.DISABLE_DRY_RUN !== "true";
+
 export const publishPackage = async (packagePath: string) => {
   const packageJson: PackageJson = require(path.resolve(packagePath, "package.json"));
 
-  console.log("DRY_RUN:", process.env.DRY_RUN);
+  console.log("DRY_RUN:", DRY_RUN);
 
   try {
     console.time(`${packageJson.name}@${packageJson.version} has been published`);
