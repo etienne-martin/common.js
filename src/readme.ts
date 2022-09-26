@@ -1,8 +1,7 @@
 import { PackageJson } from "type-fest";
 import { assert } from "@sindresorhus/is";
 import path from "node:path";
-import { realpath } from "node:fs/promises";
-import { writeFile } from "node:fs/promises";
+import {rm, writeFile} from "node:fs/promises";
 import { escapePackageName } from "./package-name";
 
 const readmeTemplate = (packageJson: Required<Pick<PackageJson, "name" | "version">>) => `
@@ -15,10 +14,7 @@ Exported from [${packageJson.name}@${packageJson.version}](https://www.npmjs.com
 `.trim();
 
 export const replaceReadme = async (packagePath: string) => {
-  const readmePath = await realpath(path.resolve(packagePath, "README.md"));
-
-  console.log(readmePath);
-
+  const readmePath = path.resolve(packagePath, "README.md");
   const packageJsonPath = path.resolve(packagePath, "package.json");
   const packageJson: PackageJson = require(packageJsonPath);
 
@@ -29,6 +25,9 @@ export const replaceReadme = async (packagePath: string) => {
     name: packageJson.name,
     version: packageJson.version
   });
+
+  await rm(path.resolve(packagePath, "README.md"), { force: true });
+  await rm(path.resolve(packagePath, "readme.md"), { force: true });
 
   await writeFile(readmePath, newReadmeContent);
 };
