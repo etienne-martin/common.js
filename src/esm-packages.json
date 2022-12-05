@@ -7,5 +7,6 @@
   "serialize-error@latest",
   "p-queue@latest",
   "p-locate@latest",
-  "p-limit@latest"
+  "p-limit@latest",
+  "quick-lru@latest"
 ]
