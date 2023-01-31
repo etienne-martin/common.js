@@ -8,5 +8,6 @@
   "p-queue@latest",
   "p-locate@latest",
   "p-limit@latest",
-  "quick-lru@latest"
+  "quick-lru@latest",
+  "mem@latest"
 ]
