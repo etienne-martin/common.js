@@ -31,7 +31,8 @@ const convertPackageJsonToCommonJs = async (packageJson: PackageJson, esmModules
     scripts: {
       ...packageJson.scripts,
       prepare: undefined,
-      prepack: undefined
+      prepack: undefined,
+      prepublishOnly: undefined
     }
   }
 
