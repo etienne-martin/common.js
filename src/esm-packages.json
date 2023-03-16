@@ -9,5 +9,6 @@
   "p-locate@latest",
   "p-limit@latest",
   "quick-lru@latest",
-  "mem@latest"
+  "mem@latest",
+  "node-fetch"
 ]
