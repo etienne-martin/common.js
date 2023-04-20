@@ -10,5 +10,6 @@
   "p-limit@latest",
   "quick-lru@latest",
   "mem@latest",
-  "node-fetch@latest"
+  "node-fetch@latest",
+  "p-retry@latest"
 ]
