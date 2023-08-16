@@ -68,6 +68,8 @@ const convertPackageJsonToCommonJs = async (packageJson: PackageJson, esmModules
       }
     }
 
+    console.log(newPackageJson);
+    
     // Makes sure that we've managed to convert the entry point
     assert.string(newPackageJson.main);
   }
