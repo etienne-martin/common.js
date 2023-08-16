@@ -11,5 +11,6 @@
   "quick-lru@latest",
   "mem@latest",
   "node-fetch@latest",
-  "p-retry@latest"
+  "p-retry@latest",
+  "query-string@latest"
 ]

@@ -51,6 +51,10 @@ const convertPackageJsonToCommonJs = async (packageJson: PackageJson, esmModules
         newPackageJson.types = packageJson.exports.types;
       }
 
+      if ("default" in packageJson.exports && is.string(packageJson.exports.default)) {
+        newPackageJson.main = packageJson.exports.default;
+      }
+
       if ("node" in packageJson.exports && is.string(packageJson.exports.node)) {
         newPackageJson.main = packageJson.exports.node;
 
