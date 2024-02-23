@@ -13,5 +13,6 @@
   "node-fetch@latest",
   "p-retry@latest",
   "query-string@latest",
-  "p-debounce@latest"
+  "p-debounce@latest",
+  "p-throttle@latest"
 ]
