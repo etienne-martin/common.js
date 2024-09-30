@@ -15,5 +15,6 @@
   "query-string@latest",
   "p-debounce@latest",
   "p-throttle@latest",
-  "@sindresorhus/slugify@latest"
+  "@sindresorhus/slugify@latest",
+  "object-scan@latest"
 ]
