@@ -15,6 +15,7 @@
   "query-string@latest",
   "p-debounce@latest",
   "p-throttle@latest",
+  "next-intl@latest",
   "@sindresorhus/slugify@latest",
   "object-scan@latest"
 ]
