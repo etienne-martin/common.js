@@ -29,6 +29,19 @@ const hasRootExport = (exports: PackageJson["exports"]) => {
   return exportKeys.includes(".") || exportKeys.every((key) => !key.startsWith("."));
 }
 
+const getRootExport = (exports: PackageJson["exports"]) => {
+  if (!is.object(exports)) {
+    return exports;
+  }
+
+  const exportMap = exports as Record<string, unknown>;
+  if ("." in exportMap) {
+    return exportMap["."];
+  }
+
+  return hasRootExport(exports) ? exports : undefined;
+}
+
 const getEntrypointsFromExport = (exportValue: unknown): PackageEntrypoints => {
   const entrypoints: PackageEntrypoints = {};
 
@@ -85,12 +98,7 @@ const getEntrypointsFromExport = (exportValue: unknown): PackageEntrypoints => {
 }
 
 const getPackageEntrypoints = (exports: PackageJson["exports"]): PackageEntrypoints => {
-  if (is.object(exports)) {
-    const exportMap = exports as Record<string, unknown>;
-    return getEntrypointsFromExport(hasRootExport(exports) && "." in exportMap ? exportMap["."] : exports);
-  }
-
-  return getEntrypointsFromExport(exports);
+  return getEntrypointsFromExport(getRootExport(exports));
 }
 
 const convertPackageJsonToCommonJs = async (packageJson: PackageJson, esmModules: Record<string, string[]>) => {
@@ -111,9 +119,13 @@ const convertPackageJsonToCommonJs = async (packageJson: PackageJson, esmModules
     dependencies: {},
     scripts: {
       ...packageJson.scripts,
+      postpack: undefined,
+      postpublish: undefined,
       prepare: undefined,
+      prepublish: undefined,
       prepack: undefined,
-      prepublishOnly: undefined
+      prepublishOnly: undefined,
+      publish: undefined
     }
   }
 
@@ -155,18 +167,37 @@ const convertPackageJsonToCommonJs = async (packageJson: PackageJson, esmModules
 }
 
 const isEsmOnly = (packageJson: PackageJson) => {
-  const isCjs = !packageJson.type || packageJson.type === "commonjs" || !!packageJson.main;
-  const isEsm = packageJson.type === "module";
+  if (packageJson.type !== "module") {
+    return false;
+  }
 
-  return isEsm && !isCjs;
+  const hasCommonJsMain = is.string(packageJson.main) && packageJson.main.endsWith(".cjs");
+  const rootExport = getRootExport(packageJson.exports);
+
+  if (!is.object(rootExport)) {
+    return !hasCommonJsMain;
+  }
+
+  const requireEntrypoint = (rootExport as Record<string, unknown>)["require"];
+  return !hasCommonJsMain && !requireEntrypoint;
+}
+
+const parsePinnedPackage = (pinnedPackage: string) => {
+  const versionSeparatorIndex = pinnedPackage.lastIndexOf("@");
+
+  if (versionSeparatorIndex <= 0) {
+    throw new Error(`Invalid pinned package: ${pinnedPackage}`);
+  }
+
+  return {
+    packageName: pinnedPackage.slice(0, versionSeparatorIndex),
+    packageVersion: pinnedPackage.slice(versionSeparatorIndex + 1)
+  };
 }
 
 const convert = async (pinnedPackage: string) => {
-  const [packageName, packageVersion] = pinnedPackage.split("@");
+  const { packageName, packageVersion } = parsePinnedPackage(pinnedPackage);
   const packageDir = path.resolve(TEMP_FOLDER, pinnedPackage);
-
-  assert.string(packageName);
-  assert.string(packageVersion);
 
   await rm(TEMP_FOLDER, { recursive: true, force: true });
   await mkdir(packageDir, { recursive: true });
