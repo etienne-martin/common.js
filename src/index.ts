@@ -12,6 +12,87 @@ import { transpilePackage } from "./transpile";
 
 const TEMP_FOLDER = path.resolve("./tmp");
 
+type PackageEntrypoints = Pick<PackageJson, "browser" | "main" | "types">;
+
+const SUPPORTED_LICENSES = ["BSD-3-CLAUSE", "MIT"];
+
+const isSupportedLicense = (license: string | undefined) => (
+  !!license && SUPPORTED_LICENSES.some((supportedLicense) => license.includes(supportedLicense))
+);
+
+const hasRootExport = (exports: PackageJson["exports"]) => {
+  if (!is.object(exports)) {
+    return true;
+  }
+
+  const exportKeys = Object.keys(exports);
+  return exportKeys.includes(".") || exportKeys.every((key) => !key.startsWith("."));
+}
+
+const getEntrypointsFromExport = (exportValue: unknown): PackageEntrypoints => {
+  const entrypoints: PackageEntrypoints = {};
+
+  if (is.string(exportValue)) {
+    entrypoints.main = exportValue;
+    return entrypoints;
+  }
+
+  if (!is.object(exportValue)) {
+    return entrypoints;
+  }
+
+  const conditions = exportValue as Record<string, unknown>;
+  const browserEntrypoint = conditions["browser"];
+  const defaultEntrypoint = conditions["default"];
+  const importEntrypoint = conditions["import"];
+  const nodeEntrypoint = conditions["node"];
+  const requireEntrypoint = conditions["require"];
+  const typesEntrypoint = conditions["types"];
+
+  if (is.string(typesEntrypoint)) {
+    entrypoints.types = typesEntrypoint;
+  }
+
+  if (is.string(defaultEntrypoint)) {
+    entrypoints.main = defaultEntrypoint;
+  }
+
+  if (is.string(importEntrypoint) && !entrypoints.main) {
+    entrypoints.main = importEntrypoint;
+  }
+
+  if (is.string(requireEntrypoint)) {
+    entrypoints.main = requireEntrypoint;
+  }
+
+  if (is.string(nodeEntrypoint)) {
+    entrypoints.main = nodeEntrypoint;
+
+    if (is.string(defaultEntrypoint)) {
+      entrypoints.browser = defaultEntrypoint;
+    }
+  }
+
+  if (is.string(browserEntrypoint)) {
+    entrypoints.browser = browserEntrypoint;
+
+    if (is.string(defaultEntrypoint)) {
+      entrypoints.main = defaultEntrypoint;
+    }
+  }
+
+  return entrypoints;
+}
+
+const getPackageEntrypoints = (exports: PackageJson["exports"]): PackageEntrypoints => {
+  if (is.object(exports)) {
+    const exportMap = exports as Record<string, unknown>;
+    return getEntrypointsFromExport(hasRootExport(exports) && "." in exportMap ? exportMap["."] : exports);
+  }
+
+  return getEntrypointsFromExport(exports);
+}
+
 const convertPackageJsonToCommonJs = async (packageJson: PackageJson, esmModules: Record<string, string[]>) => {
   assert.string(packageJson.name);
 
@@ -36,44 +117,23 @@ const convertPackageJsonToCommonJs = async (packageJson: PackageJson, esmModules
     }
   }
 
-  if (packageJson.license?.toUpperCase() !== "MIT") {
+  const license = packageJson.license?.toUpperCase();
+  if (!isSupportedLicense(license)) {
     throw new Error(`Unsupported license: ${packageJson.license}`);
   }
 
   // https://nodejs.org/api/packages.html#community-conditions-definitions
   if (packageJson.exports) {
-    if (is.string(packageJson.exports)) {
-      newPackageJson.main = packageJson.exports;
-    } else if (is.object(packageJson.exports)) {
-      // @ts-ignore
-      if ("types" in packageJson.exports && is.string(packageJson.exports.types)) {
-        // @ts-ignore
-        newPackageJson.types = packageJson.exports.types;
-      }
+    const entrypoints = getPackageEntrypoints(packageJson.exports);
 
-      if ("default" in packageJson.exports && is.string(packageJson.exports.default)) {
-        newPackageJson.main = packageJson.exports.default;
-      }
-
-      if ("node" in packageJson.exports && is.string(packageJson.exports.node)) {
-        newPackageJson.main = packageJson.exports.node;
-
-        if ("default" in packageJson.exports && is.string(packageJson.exports.default)) {
-          newPackageJson.browser = packageJson.exports.default;
-        }
-      }
-
-      if ("browser" in packageJson.exports && is.string(packageJson.exports.browser)) {
-        newPackageJson.browser = packageJson.exports.browser;
-
-        if ("default" in packageJson.exports && is.string(packageJson.exports.default)) {
-          newPackageJson.main = packageJson.exports.default;
-        }
-      }
-    }
+    newPackageJson.browser = entrypoints.browser ?? newPackageJson.browser;
+    newPackageJson.main = entrypoints.main ?? newPackageJson.main;
+    newPackageJson.types = entrypoints.types ?? newPackageJson.types;
 
     // Makes sure that we've managed to convert the entry point
-    assert.string(newPackageJson.main);
+    if (hasRootExport(packageJson.exports) && !newPackageJson.types) {
+      assert.string(newPackageJson.main);
+    }
   }
 
   if (is.object(packageJson.dependencies)) {
