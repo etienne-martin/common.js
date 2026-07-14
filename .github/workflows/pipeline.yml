@@ -10,6 +10,9 @@ on:
     - cron:  '0 0 * * *'
   workflow_dispatch: # Enables manual triggers
 
+concurrency:
+  group: common-js-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
+  cancel-in-progress: false
 
 jobs:
   pipeline:
@@ -39,6 +42,9 @@ jobs:
 
       - name: Install dependencies
         run: yarn install --frozen-lockfile
+
+      - name: Test
+        run: yarn test
 
       - name: Disable dry-run
         if: (endsWith(github.ref, '/main') && github.event_name == 'push') || github.event_name == 'schedule'
