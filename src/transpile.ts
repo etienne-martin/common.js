@@ -1,7 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import ts from "typescript";
-import { escapePackageName } from "./package-name";
 import { exec } from "./utils/exec";
 import { glob } from "./utils/glob";
 
@@ -13,45 +12,37 @@ type Replacement = {
 
 const REWRITABLE_EXTENSIONS = ["js", "cjs", "mjs", "jsx", "ts", "cts", "mts", "tsx"];
 
-const getPackageName = (moduleSpecifier: string) => {
-  if (
-    !moduleSpecifier ||
-    moduleSpecifier.startsWith(".") ||
-    moduleSpecifier.startsWith("#") ||
-    path.isAbsolute(moduleSpecifier)
-  ) {
-    return;
-  }
-
-  if (moduleSpecifier.startsWith("@")) {
-    const [scope, name] = moduleSpecifier.split("/");
-
-    if (!scope || !name) {
-      return;
-    }
-
-    return `${scope}/${name}`;
-  }
-
-  return moduleSpecifier.split("/")[0];
-};
-
-export const rewriteCommonJsImport = (
-  moduleSpecifier: string,
-  esmPackageNames: ReadonlySet<string>
+export const rewritePackageSelfReference = (
+  value: string,
+  sourcePackageName: string,
+  commonJsPackageName: string
 ) => {
-  const packageName = getPackageName(moduleSpecifier);
-
-  if (!packageName || !esmPackageNames.has(packageName)) {
-    return moduleSpecifier;
+  if (value !== sourcePackageName && !value.startsWith(`${sourcePackageName}/`)) {
+    return value;
   }
 
-  return `@common.js/${escapePackageName(packageName)}${moduleSpecifier.slice(packageName.length)}`;
+  return `${commonJsPackageName}${value.slice(sourcePackageName.length)}`;
 };
 
 const isStringLiteralLike = (node: ts.Node): node is ts.StringLiteral | ts.NoSubstitutionTemplateLiteral => (
   ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)
 );
+
+const quoteRewrittenString = (
+  node: ts.StringLiteral | ts.NoSubstitutionTemplateLiteral,
+  value: string
+) => {
+  if (!ts.isNoSubstitutionTemplateLiteral(node)) {
+    return JSON.stringify(value);
+  }
+
+  const escapedValue = value
+    .replace(/\\/g, "\\\\")
+    .replace(/`/g, "\\`")
+    .replace(/\$\{/g, "\\${");
+
+  return `\`${escapedValue}\``;
+};
 
 const getScriptKind = (filePath: string) => {
   if (filePath.endsWith(".tsx")) {
@@ -69,9 +60,10 @@ const getScriptKind = (filePath: string) => {
   return ts.ScriptKind.JS;
 };
 
-const rewriteImportSpecifiersInFile = async (
+const rewriteSelfReferencesInFile = async (
   filePath: string,
-  esmPackageNames: ReadonlySet<string>
+  sourcePackageName: string,
+  commonJsPackageName: string
 ) => {
   const source = await readFile(filePath, "utf8");
   const sourceFile = ts.createSourceFile(
@@ -83,40 +75,20 @@ const rewriteImportSpecifiersInFile = async (
   );
   const replacements: Replacement[] = [];
 
-  const addReplacement = (literal: ts.StringLiteral | ts.NoSubstitutionTemplateLiteral) => {
-    const rewrittenModuleSpecifier = rewriteCommonJsImport(literal.text, esmPackageNames);
-
-    if (rewrittenModuleSpecifier === literal.text) {
-      return;
-    }
-
-    replacements.push({
-      start: literal.getStart(sourceFile),
-      end: literal.getEnd(),
-      text: JSON.stringify(rewrittenModuleSpecifier)
-    });
-  };
-
   const visit = (node: ts.Node): void => {
-    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier) {
-      if (isStringLiteralLike(node.moduleSpecifier)) {
-        addReplacement(node.moduleSpecifier);
-      }
-    } else if (ts.isExternalModuleReference(node)) {
-      if (isStringLiteralLike(node.expression)) {
-        addReplacement(node.expression);
-      }
-    } else if (ts.isImportTypeNode(node)) {
-      if (ts.isLiteralTypeNode(node.argument) && isStringLiteralLike(node.argument.literal)) {
-        addReplacement(node.argument.literal);
-      }
-    } else if (ts.isCallExpression(node)) {
-      const [moduleSpecifier] = node.arguments;
-      const isRequireCall = ts.isIdentifier(node.expression) && node.expression.text === "require";
-      const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
+    if (isStringLiteralLike(node)) {
+      const rewrittenValue = rewritePackageSelfReference(
+        node.text,
+        sourcePackageName,
+        commonJsPackageName
+      );
 
-      if ((isRequireCall || isDynamicImport) && moduleSpecifier && isStringLiteralLike(moduleSpecifier)) {
-        addReplacement(moduleSpecifier);
+      if (rewrittenValue !== node.text) {
+        replacements.push({
+          start: node.getStart(sourceFile),
+          end: node.getEnd(),
+          text: quoteRewrittenString(node, rewrittenValue)
+        });
       }
     }
 
@@ -141,33 +113,29 @@ const rewriteImportSpecifiersInFile = async (
   await writeFile(filePath, rewrittenSource);
 };
 
-export const rewriteCommonJsImports = async (
+export const rewritePackageSelfReferences = async (
   packagePath: string,
-  esmModules: Record<string, string[]>
+  sourcePackageName: string,
+  commonJsPackageName: string
 ) => {
-  const esmPackageNames = new Set(Object.keys(esmModules));
-
-  if (!esmPackageNames.size) {
-    return;
-  }
-
   const files = (await Promise.all(
-    REWRITABLE_EXTENSIONS.map((extension) => glob(path.resolve(packagePath, `**/*.${extension}`), { nodir: true }))
-  )).flat();
+    REWRITABLE_EXTENSIONS.map((extension) => glob(
+      path.resolve(packagePath, `**/*.${extension}`),
+      { nodir: true }
+    ))
+  )).flat().filter((filePath) => (
+    !path.relative(packagePath, filePath).split(path.sep).includes("node_modules")
+  ));
 
   await Promise.all(
-    files.map((filePath) => rewriteImportSpecifiersInFile(filePath, esmPackageNames))
+    files.map((filePath) => rewriteSelfReferencesInFile(
+      filePath,
+      sourcePackageName,
+      commonJsPackageName
+    ))
   );
 };
 
-export const transpilePackage = async (
-  packagePath: string,
-  destination: string,
-  esmModules: Record<string, string[]>
-) => {
-  await exec(
-    `yarn swc "${packagePath}" --out-dir "${destination}"`
-  );
-
-  await rewriteCommonJsImports(destination, esmModules);
-};
+export const transpilePackage = async (packagePath: string, destination: string) => exec(
+  `yarn swc "${packagePath}" --out-dir "${destination}"`
+);
