@@ -275,7 +275,8 @@ const convert = async (pinnedPackage: string) => {
 
   await transpilePackage(
     path.resolve(packageDir, "node_modules"),
-    path.resolve(TEMP_FOLDER, "./transpiled")
+    path.resolve(TEMP_FOLDER, "./transpiled"),
+    esmModules
   );
 
   console.timeEnd("Transpiled packages");
