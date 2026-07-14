@@ -16,6 +16,7 @@
   "p-debounce@latest",
   "p-throttle@latest",
   "next-intl@latest",
+  "use-intl@latest",
   "@sindresorhus/slugify@latest",
   "object-scan@latest"
 ]
