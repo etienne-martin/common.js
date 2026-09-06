@@ -580,6 +580,74 @@ test("does not treat an unpublished wrapper tombstone as a newer source release"
   });
 });
 
+test("leaves declaration-only dependencies out of the conversion graph", async () => {
+  await withTemporaryDirectory("common-js-types-only-dependency-", async (directory) => {
+    const serializeErrorPackageJsonPath = path.join(
+      directory,
+      "node_modules",
+      "serialize-error",
+      "package.json"
+    );
+    const typeFestPackageJsonPath = path.join(
+      directory,
+      "node_modules",
+      "type-fest",
+      "package.json"
+    );
+
+    await Promise.all([
+      writeJson(serializeErrorPackageJsonPath, {
+        name: "serialize-error",
+        version: "13.0.1",
+        type: "module",
+        license: "MIT",
+        exports: {
+          types: "./index.d.ts",
+          default: "./index.js"
+        },
+        dependencies: {
+          "type-fest": "^5.9.0"
+        }
+      }),
+      writeJson(typeFestPackageJsonPath, {
+        name: "type-fest",
+        version: "5.9.0",
+        type: "module",
+        license: "MIT",
+        exports: {
+          ".": {
+            types: "./index.d.ts"
+          },
+          "./globals": {
+            types: "./source/globals/index.d.ts"
+          }
+        }
+      })
+    ]);
+
+    const plans = await createConversionPlans(
+      await readInstalledPackages([
+        serializeErrorPackageJsonPath,
+        typeFestPackageJsonPath
+      ]),
+      async () => ({})
+    );
+
+    assert.equal(plans.length, 1);
+    const serializeErrorPlan = getPlan(plans, "serialize-error");
+    assert.equal(serializeErrorPlan.convertedDependencies.size, 0);
+
+    const convertedPackageJson = convertPackageJsonToCommonJs(
+      serializeErrorPlan.installedPackage.packageJson,
+      serializeErrorPlan.commonJsVersion,
+      serializeErrorPlan.buildKey,
+      getConvertedDependencies(serializeErrorPlan)
+    );
+
+    assert.equal(convertedPackageJson.dependencies?.["type-fest"], "^5.9.0");
+  });
+});
+
 test("preserves exported subpaths and synthesizes require for import-only conditions", () => {
   const sourceExports = {
     ".": {
@@ -699,6 +767,35 @@ test("preserves exported subpaths and synthesizes require for import-only condit
 
   assert.equal(isEsmOnly(sourcePackageJson), true);
   assert.equal(isEsmOnly(packageWithRequire), false);
+  assert.equal(isEsmOnly({
+    name: "types-only",
+    version: "1.0.0",
+    type: "module",
+    exports: {
+      ".": {
+        types: "./index.d.ts"
+      },
+      "./globals": {
+        "types@>=5": "./globals-modern.d.ts",
+        types: "./globals.d.ts"
+      }
+    }
+  } as PackageJson), false);
+  assert.equal(isEsmOnly({
+    name: "direct-types-only",
+    version: "1.0.0",
+    type: "module",
+    exports: "./index.d.ts"
+  } as PackageJson), false);
+  assert.equal(isEsmOnly({
+    name: "types-and-runtime",
+    version: "1.0.0",
+    type: "module",
+    exports: {
+      types: "./index.d.ts",
+      import: "./index.js"
+    }
+  } as PackageJson), true);
   assert.equal(isEsmOnly({
     name: "blocked-require",
     version: "1.0.0",
@@ -916,7 +1013,7 @@ test("orders generated packages dependency-first and deduplicates identical rele
   });
 });
 
-test("accepts only an already-published package with the same generated build", async () => {
+test("accepts only an existing package with the same generated build", async () => {
   await withTemporaryDirectory("common-js-publish-collision-", async (directory) => {
     await writeJson(path.join(directory, "package.json"), {
       name: "@common.js/collision-fixture",
@@ -932,7 +1029,10 @@ test("accepts only an already-published package with the same generated build", 
     });
 
     const publishError = new Error("Cannot publish over existing version.");
-    const getRunner = (publishedBuildKey: string | undefined) => {
+    const getRunner = (
+      publishedVersion: string | undefined,
+      publishedBuildKey?: string
+    ) => {
       const commands: string[] = [];
       const runCommand = async (command: string) => {
         commands.push(command);
@@ -942,7 +1042,14 @@ test("accepts only an already-published package with the same generated build", 
         }
 
         return {
-          stdout: publishedBuildKey === undefined ? "" : JSON.stringify(publishedBuildKey),
+          stdout: publishedVersion === undefined
+            ? ""
+            : JSON.stringify({
+              version: publishedVersion,
+              commonjs: publishedBuildKey === undefined
+                ? undefined
+                : { buildKey: publishedBuildKey }
+            }),
           stderr: ""
         };
       };
@@ -950,7 +1057,7 @@ test("accepts only an already-published package with the same generated build", 
       return { commands, runCommand };
     };
     for (const publishedBuildKey of ["different-build", undefined]) {
-      const mismatch = getRunner(publishedBuildKey);
+      const mismatch = getRunner("1.0.0", publishedBuildKey);
 
       await assert.rejects(
         publishPackage(directory, { runCommand: mismatch.runCommand }),
@@ -958,7 +1065,27 @@ test("accepts only an already-published package with the same generated build", 
       );
     }
 
-    const matching = getRunner("expected-build");
+    for (const missing of [getRunner(undefined), getRunner("2.0.0", "expected-build")]) {
+      await assert.rejects(
+        publishPackage(directory, { runCommand: missing.runCommand }),
+        (error) => error === publishError
+      );
+    }
+
+    const lookupFailureCommands: string[] = [];
+
+    await assert.rejects(
+      publishPackage(directory, {
+        runCommand: async (command) => {
+          lookupFailureCommands.push(command);
+          throw command.includes("npm publish") ? publishError : new Error("Registry unavailable");
+        }
+      }),
+      (error) => error === publishError
+    );
+    assert.equal(lookupFailureCommands.length, 2);
+
+    const matching = getRunner("1.0.0", "expected-build");
 
     await publishPackage(directory, {
       tag: "commonjs",
@@ -966,6 +1093,10 @@ test("accepts only an already-published package with the same generated build", 
       dryRun: false
     });
     assert.match(matching.commands[0] ?? "", /--tag "commonjs"/);
+    assert.match(
+      matching.commands[1] ?? "",
+      /npm view .* --json/
+    );
     assert.match(matching.commands[2] ?? "", /npm dist-tag add .* "commonjs"/);
     assert.equal(matching.commands.length, 3);
 
@@ -1048,7 +1179,12 @@ test("reloads a manifest when a temporary package path is reused", async () => {
       }
 
       return {
-        stdout: JSON.stringify(command.includes("@2.0.0") ? "build-two" : "build-one"),
+        stdout: JSON.stringify({
+          version: command.includes("@2.0.0") ? "2.0.0" : "1.0.0",
+          commonjs: {
+            buildKey: command.includes("@2.0.0") ? "build-two" : "build-one"
+          }
+        }),
         stderr: ""
       };
     };
