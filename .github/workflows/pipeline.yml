@@ -57,6 +57,10 @@ jobs:
         if: (endsWith(github.ref, '/main') && github.event_name == 'push') || github.event_name == 'schedule'
         run: npm config set //registry.npmjs.org/:_authToken="${{ secrets.NPM_AUTH_TOKEN }}"
 
+      - name: Verify NPM authentication
+        if: (endsWith(github.ref, '/main') && github.event_name == 'push') || github.event_name == 'schedule'
+        run: npm whoami --registry=https://registry.npmjs.org
+
       - name: Publish
         run: yarn start
 

@@ -64,17 +64,41 @@ const ensurePublishTag = async (
   markTagCompleted(packageVersionKey, tag);
 };
 
-const getPublishedBuildKey = async (
+type PublishedPackageMetadata = {
+  version?: unknown;
+  buildKey?: unknown;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  typeof value === "object" && value !== null && !Array.isArray(value)
+);
+
+const getPublishedPackageMetadata = async (
   name: string,
   version: string,
   runCommand: PublishCommand
-) => {
+): Promise<PublishedPackageMetadata | undefined> => {
   const { stdout } = await runCommand(
-    `npm view "${name}@${version}" commonjs.buildKey --json --registry=https://registry.npmjs.org`
+    `npm view "${name}@${version}" --json --registry=https://registry.npmjs.org`
   );
   const output = stdout.trim();
 
-  return output ? JSON.parse(output) as unknown : undefined;
+  if (!output) {
+    return;
+  }
+
+  const metadata = JSON.parse(output) as unknown;
+
+  if (!isRecord(metadata)) {
+    return;
+  }
+
+  const commonjs = isRecord(metadata.commonjs) ? metadata.commonjs : undefined;
+
+  return {
+    version: metadata.version,
+    buildKey: commonjs?.buildKey
+  };
 };
 
 export const publishPackage = async (
@@ -133,15 +157,19 @@ export const publishPackage = async (
       throw error;
     }
 
-    let publishedBuildKey: unknown;
+    let publishedPackage: PublishedPackageMetadata | undefined;
 
     try {
-      publishedBuildKey = await getPublishedBuildKey(name, version, runCommand);
+      publishedPackage = await getPublishedPackageMetadata(name, version, runCommand);
     } catch {
       throw error;
     }
 
-    if (publishedBuildKey === buildKey) {
+    if (publishedPackage?.version !== version) {
+      throw error;
+    }
+
+    if (publishedPackage.buildKey === buildKey) {
       completedBuilds.set(packageVersionKey, buildKey);
       await ensurePublishTag(name, version, options.tag, dryRun, runCommand);
       console.log(`${name}@${version} is already published`);

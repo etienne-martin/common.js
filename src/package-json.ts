@@ -322,8 +322,32 @@ const isCommonJsTarget = (value: unknown) => (
   typeof value === "string" && /\.(?:cjs|json|node)$/.test(value)
 );
 
+const hasRuntimeExportTarget = (value: unknown): boolean => {
+  if (typeof value === "string") {
+    return !/\.d\.(?:c|m)?ts$/.test(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.some(hasRuntimeExportTarget);
+  }
+
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return Object.entries(value).some(([condition, target]) => (
+    condition !== "types" &&
+    !condition.startsWith("types@") &&
+    hasRuntimeExportTarget(target)
+  ));
+};
+
 export const isEsmOnly = (packageJson: PackageJson) => {
   if (packageJson.type !== "module") {
+    return false;
+  }
+
+  if (packageJson.exports !== undefined && !hasRuntimeExportTarget(packageJson.exports)) {
     return false;
   }
 
